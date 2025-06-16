@@ -26,12 +26,20 @@ VIDEOCHATGPT = {
     "data_path": "PATH_TO_VIDEOCHATGPT_DATA",
 }
 
+# Demo dataset for testing
+SINGLE_IMAGES = {
+    # Path relative to repo root to avoid cwd confusion
+    "annotation_path": "qwen-vl-finetune/demo/single_images.json",
+    "data_path": "qwen-vl-finetune/demo/",
+}
+
 data_dict = {
     "cambrian_737k": CAMBRIAN_737K,
     "cambrian_737k_pack": CAMBRIAN_737K_PACK,
     "mp_doc": MP_DOC,
     "clevr_mc": CLEVR_MC,
     "videochatgpt": VIDEOCHATGPT,
+    "single_images": SINGLE_IMAGES,
 }
 
 

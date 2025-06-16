@@ -9,6 +9,16 @@ class ModelArguments:
     tune_mm_llm: bool = field(default=False)
     tune_mm_mlp: bool = field(default=False)
     tune_mm_vision: bool = field(default=False)
+    
+    # LoRA arguments
+    use_lora: bool = field(default=False, metadata={"help": "Whether to use LoRA"})
+    lora_r: int = field(default=32, metadata={"help": "LoRA attention dimension"})
+    lora_alpha: int = field(default=16, metadata={"help": "LoRA alpha"})
+    lora_dropout: float = field(default=0.1, metadata={"help": "LoRA dropout"})
+    lora_target_modules: Optional[str] = field(
+        default="q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj",
+        metadata={"help": "Comma-separated list of target modules for LoRA"}
+    )
 
 @dataclass
 class DataArguments:

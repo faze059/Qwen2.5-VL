@@ -13,14 +13,35 @@ from typing import Dict, Optional, Sequence, List, Tuple
 from io import BytesIO
 import base64
 from collections.abc import Sequence
+import copy
+import json
+import os
+import random
+import time
+from typing import Dict, List
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
-from decord import VideoReader
-from torchcodec.decoders import VideoDecoder
 import transformers
+
+# Try to import video processing libraries
+try:
+    from decord import VideoReader
+    DECORD_AVAILABLE = True
+except ImportError:
+    print("⚠️  Decord not available, video processing disabled")
+    DECORD_AVAILABLE = False
+    VideoReader = None
+
+try:
+    from torchcodec.decoders import VideoDecoder
+    TORCHCODEC_AVAILABLE = True
+except ImportError:
+    print("⚠️  TorchCodec not available, using alternative video processing")
+    TORCHCODEC_AVAILABLE = False
+    VideoDecoder = None
 
 from . import data_list
 from .rope2d import get_rope_index_25, get_rope_index_2
@@ -263,6 +284,8 @@ class LazySupervisedDataset(Dataset):
             print(f"torchcodec attempt failed: {e}")
 
     def video_decord(self, video_file):
+        if not DECORD_AVAILABLE:
+            raise RuntimeError("Decord not available. Video processing disabled.")
         if not os.path.exists(video_file):
             print(f"File not exist: {video_file}")
         vr = VideoReader(video_file, num_threads=4)
@@ -284,6 +307,8 @@ class LazySupervisedDataset(Dataset):
         return self.process_video_frames(video, frame_idx, video_length)
 
     def video_torchcodec(self, video_file):
+        if not TORCHCODEC_AVAILABLE:
+            raise RuntimeError("TorchCodec not available. Video processing disabled.")
         device = "cpu"  # or e.g. "cuda"
         decoder = VideoDecoder(video_file, device=device)
         total_frames = decoder.metadata.num_frames
@@ -565,21 +590,15 @@ class FlattenedDataCollatorForSupervisedDataset(DataCollatorForSupervisedDataset
     tokenizer: transformers.PreTrainedTokenizer
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels, position_ids, attention_mask = tuple(
+        input_ids, labels, position_ids = tuple(
             [instance[key] for instance in instances]
-            for key in ("input_ids", "labels", "position_ids", "attention_mask")
+            for key in ("input_ids", "labels", "position_ids")
         )
-        attention_mask = list(
-            itertools.chain(
-                *(
-                    instance["attention_mask"]
-                    for instance in instances
-                    if "attention_mask" in instance
-                )
-            )
-        )
-        seq_lens = torch.tensor([0] + attention_mask, dtype=torch.int32)
-        cumsum_seq_lens = torch.cumsum(seq_lens, dim=0, dtype=torch.int32)
+        # Build 2-D attention mask: packed data has no padding → all ones
+        batch_size = 1
+        total_len = sum(inst["input_ids"].shape[1] for inst in instances)
+        # 4-D mask (B, 1, Q, K) expected by Qwen-VL causal_mask builder
+        full_attention_mask = torch.ones(batch_size, 1, total_len, total_len, dtype=torch.bool)
         input_ids = torch.cat(input_ids, dim=1)
         labels = torch.cat(labels, dim=1)
         position_ids = torch.cat(position_ids, dim=2)
@@ -587,7 +606,7 @@ class FlattenedDataCollatorForSupervisedDataset(DataCollatorForSupervisedDataset
         batch = dict(
             input_ids=input_ids,
             labels=labels,
-            attention_mask=cumsum_seq_lens,
+            attention_mask=full_attention_mask,
             position_ids=position_ids,
         )
         images = list(

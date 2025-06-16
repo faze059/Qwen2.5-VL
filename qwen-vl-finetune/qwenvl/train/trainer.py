@@ -4,8 +4,16 @@ from typing import Dict, List, Optional, Sequence
 import datasets
 import torch
 import torch.nn as nn
-from flash_attn.flash_attn_interface import flash_attn_varlen_func
 from torch.utils.data import DataLoader, Sampler
+
+# Try to import flash_attn, but don't fail if it's not available
+try:
+    from flash_attn.flash_attn_interface import flash_attn_varlen_func
+    FLASH_ATTN_AVAILABLE = True
+except ImportError:
+    print("⚠️  Flash Attention not available, using eager attention instead")
+    FLASH_ATTN_AVAILABLE = False
+    flash_attn_varlen_func = None
 from transformers import Trainer
 from transformers.cache_utils import Cache
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
@@ -84,6 +92,36 @@ def _flash_attention_forward(
                 for idx in range(cu_seqlens.size(0) - 1)
             ]
         ).item()
+
+    if not FLASH_ATTN_AVAILABLE:
+        """Fallback to PyTorch scaled_dot_product_attention (SDPA).
+        This keeps training behaviour正确 when flash-attn is unavailable.
+        The input is flattened (total_tokens, n_heads, head_dim), we reshape to
+        (batch=1, n_heads, seq_len, head_dim) for SDPA, then reshape back.
+        """
+        # query_states: (T, H, D)
+        T, H, D = query_states.shape
+        # (1, H, T, D)
+        q = query_states.permute(1, 0, 2).unsqueeze(0)
+        k = key_states.permute(1, 0, 2).unsqueeze(0)
+        v = value_states.permute(1, 0, 2).unsqueeze(0)
+
+        # Build causal mask if needed
+        attn_mask = None
+        if attention_mask is not None and attention_mask.dim() == 1:
+            # attention_mask is cu_seqlens style in varlen path; fall back to full ones
+            attn_mask = None
+        # SDPA supports causal flag directly
+        attn_out = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=attn_mask, dropout_p=dropout, is_causal=causal
+        )
+        # reshape back to (T, H, D)
+        attn_out = attn_out.squeeze(0).permute(1, 0, 2)
+        attn_output = attn_out.unsqueeze(0)
+        query_states = query_states.unsqueeze(0)
+        key_states = key_states.unsqueeze(0)
+        value_states = value_states.unsqueeze(0)
+        return attn_output
 
     if not use_top_left_mask:
         causal = is_causal

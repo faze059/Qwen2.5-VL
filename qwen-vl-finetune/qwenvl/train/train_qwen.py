@@ -43,6 +43,7 @@ from qwenvl.train.argument import (
     TrainingArguments,
 )
 from transformers import AutoTokenizer, AutoProcessor, Qwen2VLImageProcessor, Trainer
+from peft import LoraConfig, get_peft_model, TaskType
 
 local_rank = None
 
@@ -92,7 +93,7 @@ def set_model(model_args, model):
         model.lm_head.requires_grad = False
 
 
-def train(attn_implementation="flash_attention_2"):
+def train(attn_implementation="eager"):
     global local_rank
 
     parser = transformers.HfArgumentParser(
@@ -147,11 +148,37 @@ def train(attn_implementation="flash_attention_2"):
         padding_side="right",
         use_fast=False,
     )
-    set_model(model_args, model)
+    
+    # Apply LoRA if enabled
+    if model_args.use_lora:
+        target_modules = model_args.lora_target_modules.split(",")
+        peft_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            inference_mode=False,
+            r=model_args.lora_r,
+            lora_alpha=model_args.lora_alpha,
+            lora_dropout=model_args.lora_dropout,
+            target_modules=target_modules,
+        )
+        model = get_peft_model(model, peft_config)
+        rank0_print(f"Applied LoRA with r={model_args.lora_r}, alpha={model_args.lora_alpha}")
+        model.print_trainable_parameters()
+    else:
+        set_model(model_args, model)
 
-    if torch.distributed.get_rank() == 0:
+    # Print trainable parameters info
+    if torch.distributed.is_initialized():
+        if torch.distributed.get_rank() == 0:
+            model.visual.print_trainable_parameters()
+            if hasattr(model.model, 'print_trainable_parameters'):
+                model.model.print_trainable_parameters()
+    else:
+        # Single GPU training
         model.visual.print_trainable_parameters()
-        model.model.print_trainable_parameters()
+        if hasattr(model.model, 'print_trainable_parameters'):
+            model.model.print_trainable_parameters()
+        else:
+            print("LLM Module - Using LoRA, trainable parameters configured")
     
     if data_args.data_packing:
         data_module = make_supervised_data_module_packed(tokenizer=tokenizer, data_args=data_args)
@@ -175,4 +202,4 @@ def train(attn_implementation="flash_attention_2"):
 
 
 if __name__ == "__main__":
-    train(attn_implementation="flash_attention_2")
+    train(attn_implementation="eager")

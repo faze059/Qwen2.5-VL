@@ -16,8 +16,17 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
-from decord import VideoReader
 import transformers
+from typing import Optional, Tuple
+
+# Try to import decord, but don't fail if it's not available
+try:
+    from decord import VideoReader
+    DECORD_AVAILABLE = True
+except ImportError:
+    print("⚠️  Decord not available in rope2d, video processing disabled")
+    DECORD_AVAILABLE = False
+    VideoReader = None
 
 
 def get_rope_index_25(

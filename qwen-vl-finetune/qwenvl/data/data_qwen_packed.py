@@ -18,8 +18,21 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
-from decord import VideoReader
-from torchcodec.decoders import VideoDecoder
+# Try to import decord, but don't fail if it's not available
+try:
+    from decord import VideoReader
+    DECORD_AVAILABLE = True
+except ImportError:
+    print("⚠️  Decord not available in data_qwen_packed, video processing disabled")
+    DECORD_AVAILABLE = False
+    VideoReader = None
+try:
+    from torchcodec.decoders import VideoDecoder
+    TORCHCODEC_AVAILABLE = True
+except ImportError:
+    print("⚠️  TorchCodec not available in data_qwen_packed")
+    TORCHCODEC_AVAILABLE = False
+    VideoDecoder = None
 import transformers
 
 from . import data_list
@@ -267,6 +280,8 @@ class LazySupervisedDataset(Dataset):
             print(f"torchcodec attempt failed: {e}")
 
     def video_decord(self, video_file):
+        if not DECORD_AVAILABLE:
+            raise RuntimeError("Decord not available. Video processing disabled.")
         if not os.path.exists(video_file):
             print(f"File not exist: {video_file}")
             return None
@@ -289,6 +304,8 @@ class LazySupervisedDataset(Dataset):
         return self.process_video_frames(video, frame_idx, video_length)
 
     def video_torchcodec(self, video_file):
+        if not TORCHCODEC_AVAILABLE:
+            raise RuntimeError("TorchCodec not available. Video processing disabled.")
         device = "cpu"  # or e.g. "cuda"
         decoder = VideoDecoder(video_file, device=device)
         total_frames = decoder.metadata.num_frames
