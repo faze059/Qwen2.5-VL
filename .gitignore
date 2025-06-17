@@ -8,3 +8,7 @@ wheels/
 
 # venv
 .venv
+*.jpg
+*.html
+data/protocols_max1000px/.DS_Store
+/output_72b_lora

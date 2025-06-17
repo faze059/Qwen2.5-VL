@@ -33,6 +33,11 @@ SINGLE_IMAGES = {
     "data_path": "qwen-vl-finetune/demo/",
 }
 
+PROTOCOL_TABLES = {
+    "annotation_path": "data/train_72b_lora.jsonl",
+    "data_path": ".",
+}
+
 data_dict = {
     "cambrian_737k": CAMBRIAN_737K,
     "cambrian_737k_pack": CAMBRIAN_737K_PACK,
@@ -40,6 +45,7 @@ data_dict = {
     "clevr_mc": CLEVR_MC,
     "videochatgpt": VIDEOCHATGPT,
     "single_images": SINGLE_IMAGES,
+    "protocol_tables": PROTOCOL_TABLES,
 }
 
 
